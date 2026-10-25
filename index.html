@@ -1,1 +1,197 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mikra — תנ״ך</title>
+<style>
+:root{--bg:#faf9f6;--panel:#fff;--ink:#252a30;--muted:#73777d;--line:#e5e2dc;--accent:#345b50}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:20px max(18px,calc((100% - 1200px)/2))}
+.brand{font:700 28px Georgia,serif;letter-spacing:.5px}
+.brand span{color:var(--accent)}
+header p{margin:0;color:var(--muted);font-size:13px}
+main{max-width:1200px;margin:auto;padding:20px}
+nav,.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px}
+select,button{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink)}
+button{cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:white;border-color:var(--accent)}
+.status{color:var(--muted);font-size:13px;margin:8px 0 16px}
+.verses{display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.column{min-width:0;padding:18px}
+.column+ .column{border-left:1px solid var(--line)}
+.column h2{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin:0 0 12px}
+.verse{padding:13px 0;border-bottom:1px solid var(--line);scroll-margin-top:15px}
+.verse:last-child{border-bottom:0}
+.hebrew{direction:rtl;text-align:right;font-family:"Times New Roman",serif;font-size:25px;line-height:2}
+.english{font-size:16px;line-height:1.9}
+.num{color:var(--accent);font:600 12px system-ui;margin-right:7px}
+.hebrew .num{margin-right:0;margin-left:7px}
+.actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.actions button{font-size:12px;padding:4px 8px;color:var(--muted)}
+.rashi{font-size:14px;background:#f5f3ed;padding:10px;border-radius:8px;margin-top:8px;direction:rtl;text-align:right}
+.rashi p{margin:4px 0}
+.empty{padding:28px;color:var(--muted)}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:25px}
+@media(max-width:700px){main{padding:12px}.verses{grid-template-columns:1fr}.column+ .column{border-left:0;border-top:2px solid var(--line)}.column{padding:14px}.hebrew{font-size:23px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Mikra <span>מקרא</span></div>
+  <p>A place to read and study Tanach</p>
+</header>
+<main>
+  <nav aria-label="Text navigation">
+    <select id="book" aria-label="Book"></select>
+    <select id="chapter" aria-label="Chapter"></select>
+    <button class="primary" id="load">Open chapter</button>
+  </nav>
+  <div class="toolbar">
+    <button id="copyBoth">Copy chapter (Hebrew + English)</button>
+    <button id="bookmark">☆ Bookmark chapter</button>
+    <button id="bookmarks">My bookmarks</button>
+  </div>
+  <div id="status" class="status">Loading Tanach index…</div>
+  <section class="verses">
+    <div class="column">
+      <h2>עברית · Hebrew</h2>
+      <div id="hebrew" dir="rtl"><div class="empty">Choose a chapter to begin.</div></div>
+    </div>
+    <div class="column">
+      <h2>English</h2>
+      <div id="english"><div class="empty">Choose a chapter to begin.</div></div>
+    </div>
+  </section>
+</main>
+<footer>Text and translations provided through the Sefaria API. Mikra is an independent study interface.</footer>
+<script>
+const books = [
+["Genesis","בראשית",50],["Exodus","שמות",40],["Leviticus","ויקרא",27],
+["Numbers","במדבר",36],["Deuteronomy","דברים",34],
+["Joshua","יהושע",24],["Judges","שופטים",21],["I Samuel","שמואל א",31],
+["II Samuel","שמואל ב",24],["I Kings","מלכים א",22],["II Kings","מלכים ב",25],
+["Isaiah","ישעיהו",66],["Jeremiah","ירמיהו",52],["Ezekiel","יחזקאל",48],
+["Hosea","הושע",14],["Joel","יואל",4],["Amos","עמוס",9],["Obadiah","עובדיה",1],
+["Jonah","יונה",4],["Micah","מיכה",7],["Nahum","נחום",3],["Habakkuk","חבקוק",3],
+["Zephaniah","צפניה",3],["Haggai","חגי",2],["Zechariah","זכריה",14],
+["Malachi","מלאכי",3],["Psalms","תהילים",150],["Proverbs","משלי",31],
+["Job","איוב",42],["Song of Songs","שיר השירים",8],["Ruth","רות",4],
+["Lamentations","איכה",5],["Ecclesiastes","קהלת",12],["Esther","אסתר",10],
+["Daniel","דניאל",12],["Ezra","עזרא",10],["Nehemiah","נחמיה",13],
+["I Chronicles","דברי הימים א",29],["II Chronicles","דברי הימים ב",36]
+];
+const $=id=>document.getElementById(id);
+let current=null, currentBook=null, currentChapter=1, heb=[], eng=[];
+const savedKey="mikra-bookmarks-v1";
+function refName(book,chapter){return book+"."+chapter}
+function fillBooks(){
+  $("book").innerHTML=books.map((b,i)=>`<option value="${i}">${b[1]} · ${b[0]}</option>`).join("");
+  fillChapters(); 
+}
+function fillChapters(){
+  const b=books[+$("book").value||0];
+  $("chapter").innerHTML=Array.from({length:b[2]},(_,i)=>`<option value="${i+1}">Chapter ${i+1}</option>`).join("");
+}
+$("book").addEventListener("change",fillChapters);
+function plainText(x){
+  if(typeof x==="string")return x;
+  if(Array.isArray(x))return x.map(plainText).join(" ");
+  return "";
+}
+function escapeHTML(s){
+  return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+async function loadChapter(){
+  const b=books[+$("book").value];
+  const ch=+$("chapter").value;
+  currentBook=b[0];currentChapter=ch;
+  $("status").textContent="Loading "+b[0]+" "+ch+"…";
+  $("hebrew").innerHTML='<div class="empty">Loading Hebrew…</div>';
+  $("english").innerHTML='<div class="empty">Loading English…</div>';
+  try{
+    const url="https://www.sefaria.org/api/texts/"+encodeURIComponent(refName(b[0],ch))+"?context=0&pad=0";
+    const res=await fetch(url);
+    if(!res.ok)throw Error("Sefaria returned "+res.status);
+    const data=await res.json();
+    heb=Array.isArray(data.he)?data.he:[];
+    eng=Array.isArray(data.text)?data.text:[];
+    if(!heb.length&&!eng.length)throw Error("No text was returned for this chapter.");
+    current={book:b[0],heName:b[1],chapter:ch,he:heb,en:eng};
+    render();
+    $("status").textContent=b[1]+" · "+b[0]+" "+ch+" · "+Math.max(heb.length,eng.length)+" verses";
+  }catch(e){
+    $("status").textContent="Could not load the chapter. Check your internet connection and try again.";
+    $("hebrew").innerHTML='<div class="empty">Text could not be loaded.</div>';
+    $("english").innerHTML='<div class="empty">Text could not be loaded.</div>';
+    console.error(e);
+  }
+}
+function verseHTML(text,i,isHeb){
+  const n=i+1;
+  const content=plainText(text);
+  const direction=isHeb?' dir="rtl"':'';
+  const cls=isHeb?'hebrew':'english';
+  return `<article class="verse" id="${isHeb?'he':'en'}-${n}">
+    <div class="${cls}"${direction}><span class="num">${n}</span>${escapeHTML(content)||'<span style="color:#aaa">—</span>'}</div>
+    <div class="actions">
+      <button data-copy="${isHeb?'he':'en'}" data-verse="${n}">Copy ${isHeb?'Hebrew':'English'}</button>
+      <button data-both="${n}">Copy both</button>
+    </div>
+  </article>`;
+}
+function render(){
+  const count=Math.max(heb.length,eng.length);
+  $("hebrew").innerHTML=Array.from({length:count},(_,i)=>verseHTML(heb[i],i,true)).join("");
+  $("english").innerHTML=Array.from({length:count},(_,i)=>verseHTML(eng[i],i,false)).join("");
+}
+function verseRef(n){return `${current.book} ${current.chapter}:${n}`}
+function verseCopy(n,mode){
+  const h=plainText(heb[n-1]),e=plainText(eng[n-1]),r=verseRef(n);
+  if(mode==="he")return `${h} (${r})`;
+  if(mode==="en")return `${e} (${r})`;
+  return `${h}\n${e}\n(${r})`;
+}
+async function copy(text){
+  try{await navigator.clipboard.writeText(text);$("status").textContent="Copied to clipboard."}
+  catch{$("status").textContent="Clipboard access was blocked by the browser."}
+}
+document.addEventListener("click",e=>{
+  const c=e.target.closest("[data-copy]");
+  const b=e.target.closest("[data-both]");
+  if(c)copy(verseCopy(+c.dataset.verse,c.dataset.copy));
+  if(b)copy(verseCopy(+b.dataset.both,"both"));
+});
+$("load").addEventListener("click",loadChapter);
+$("copyBoth").addEventListener("click",()=>{
+  if(!current)return;
+  const n=Math.max(heb.length,eng.length);
+  copy(Array.from({length:n},(_,i)=>verseCopy(i+1,"both")).join("\n\n"));
+});
+$("bookmark").addEventListener("click",()=>{
+  if(!current)return;
+  let list=JSON.parse(localStorage.getItem(savedKey)||"[]");
+  const item={book:current.book,chapter:current.chapter};
+  if(!list.some(x=>x.book===item.book&&x.chapter===item.chapter))list.push(item);
+  localStorage.setItem(savedKey,JSON.stringify(list));
+  $("status").textContent="Chapter bookmarked.";
+});
+$("bookmarks").addEventListener("click",()=>{
+  const list=JSON.parse(localStorage.getItem(savedKey)||"[]");
+  if(!list.length){$("status").textContent="You have no saved bookmarks yet.";return}
+  const choice=prompt("Bookmarks:\n"+list.map((x,i)=>`${i+1}. ${x.book} ${x.chapter}`).join("\n")+"\n\nEnter a number to open it:");
+  const item=list[+choice-1];
+  if(item){
+    const i=books.findIndex(b=>b[0]===item.book);
+    if(i>=0){$("book").value=i;fillChapters();$("chapter").value=item.chapter;loadChapter()}
+  }
+});
+fillBooks();
+loadChapter();
+</script>
+</body>
+</html>
+
